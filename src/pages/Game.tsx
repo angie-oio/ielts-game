@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../store';
 import DayCard, { type DayStatus } from '../components/DayCard';
 import CompleteSheet from '../components/CompleteSheet';
 import RewardBubbles, { type Bubble } from '../components/RewardBubble';
+import IslandMap from '../components/IslandMap';
+import Shop from '../components/Shop';
 
-type Tab = 'quests' | 'plan' | 'island';
+type Tab = 'quests' | 'island' | 'shop' | 'plan';
 
 interface FlatDay {
   weekIdx: number;
@@ -18,10 +20,12 @@ export default function Game() {
   const data = useStore((s) => s.data)!;
   const completeDay = useStore((s) => s.completeDay);
   const resetPlan = useStore((s) => s.resetPlan);
+  const markOnboarded = useStore((s) => s.markOnboarded);
   const navigate = useNavigate();
 
   const [tab, setTab] = useState<Tab>('quests');
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
+  const [showOnboard, setShowOnboard] = useState(false);
   const bubbleId = useRef(0);
 
   const showReward = (text: string) => {
@@ -32,7 +36,13 @@ export default function Game() {
     }, 2000);
   };
 
-  // flatten days with global indices
+  // first-completion shop hint
+  useEffect(() => {
+    if (data.stats.completedDays >= 1 && !data.onboarded) {
+      setShowOnboard(true);
+    }
+  }, [data.stats.completedDays, data.onboarded]);
+
   const flat: FlatDay[] = useMemo(() => {
     const out: FlatDay[] = [];
     let g = 0;
@@ -67,7 +77,7 @@ export default function Game() {
                 🔥 {data.stats.streak}
               </span>
               <span className="rounded-full bg-white/25 px-3 py-1 text-sm font-bold text-white backdrop-blur">
-                ⭐ {data.stats.xp}
+                💰 {data.stats.xpBalance}
               </span>
             </div>
           </div>
@@ -78,10 +88,7 @@ export default function Game() {
           preserveAspectRatio="none"
           aria-hidden
         >
-          <path
-            d="M0,30 Q120,0 240,24 T480,18 L480,60 L0,60 Z"
-            fill="#5BB89A"
-          />
+          <path d="M0,30 Q120,0 240,24 T480,18 L480,60 L0,60 Z" fill="#5BB89A" />
           <ellipse cx="240" cy="56" rx="150" ry="20" fill="#7BC97F" />
         </svg>
       </div>
@@ -91,22 +98,23 @@ export default function Game() {
           flat={flat}
           currentWeekIdx={currentWeekIdx}
           showReward={showReward}
-          onComplete={(wi, di, note, gd, crossWeek, nextWeek) => {
+          onComplete={(wi, di, note, gd) => {
             completeDay(wi, di, note);
             showReward(`🎉 Day ${gd} 完成！`);
-            if (crossWeek) {
-              // handled inside QuestsTab via state; nothing extra here
-            }
-            void nextWeek;
           }}
         />
       )}
+
+      {tab === 'island' && <IslandMap showToast={showReward} />}
+
+      {tab === 'shop' && <Shop showToast={showReward} />}
 
       {tab === 'plan' && (
         <PlanTab
           rawText={data.rawText}
           completedDays={data.stats.completedDays}
           totalDays={totalDays}
+          totalXp={data.stats.xp}
           onReset={() => {
             if (
               window.confirm(
@@ -120,21 +128,14 @@ export default function Game() {
         />
       )}
 
-      {tab === 'island' && (
-        <IslandTab
-          completedDays={data.stats.completedDays}
-          streak={data.stats.streak}
-          xp={data.stats.xp}
-        />
-      )}
-
       {/* Bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-app justify-around border-t border-line bg-white/95 backdrop-blur safe-bottom">
         {(
           [
             ['quests', '📋', '关卡'],
-            ['plan', '📖', '计划'],
             ['island', '🏝️', '我的岛'],
+            ['shop', '🛒', '商店'],
+            ['plan', '📖', '计划'],
           ] as [Tab, string, string][]
         ).map(([key, icon, label]) => (
           <button
@@ -154,6 +155,53 @@ export default function Game() {
           </button>
         ))}
       </nav>
+
+      {/* first-completion onboarding */}
+      <AnimatePresence>
+        {showOnboard && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/30"
+            />
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="fixed inset-x-6 top-1/3 z-50 mx-auto max-w-[360px] rounded-[24px] bg-white p-6 text-center shadow-soft"
+            >
+              <div className="text-5xl">🛒</div>
+              <div className="mt-3 text-lg font-extrabold text-gray-800">
+                你赚到了第一笔 XP！
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                去商店看看能买什么来装饰你的小岛吧～
+              </p>
+              <button
+                onClick={() => {
+                  markOnboarded();
+                  setShowOnboard(false);
+                  setTab('shop');
+                }}
+                className="mt-4 w-full rounded-card bg-forest py-3 text-sm font-extrabold text-white active:scale-[0.98]"
+              >
+                去逛商店 🛒
+              </button>
+              <button
+                onClick={() => {
+                  markOnboarded();
+                  setShowOnboard(false);
+                }}
+                className="mt-2 w-full py-2 text-sm font-semibold text-gray-400"
+              >
+                以后再说
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -168,14 +216,7 @@ function QuestsTab({
   flat: FlatDay[];
   currentWeekIdx: number;
   showReward: (t: string) => void;
-  onComplete: (
-    wi: number,
-    di: number,
-    note: string,
-    gd: number,
-    crossWeek: boolean,
-    nextWeek: number
-  ) => void;
+  onComplete: (wi: number, di: number, note: string, gd: number) => void;
 }) {
   const data = useStore((s) => s.data)!;
   const { weeks, stats } = data;
@@ -183,26 +224,20 @@ function QuestsTab({
 
   const [selectedWeek, setSelectedWeek] = useState(currentWeekIdx);
   const [expandedDay, setExpandedDay] = useState(stats.currentDay);
-  const [sheet, setSheet] = useState<{
-    wi: number;
-    di: number;
-    gd: number;
-  } | null>(null);
+  const [sheet, setSheet] = useState<{ wi: number; di: number; gd: number } | null>(
+    null
+  );
 
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  // keep selected week / expansion synced to current day on mount & when day advances
   useEffect(() => {
     setSelectedWeek(currentWeekIdx);
     setExpandedDay(stats.currentDay);
   }, [currentWeekIdx, stats.currentDay]);
 
-  // auto-scroll to today's card
   useEffect(() => {
     const el = cardRefs.current[stats.currentDay];
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [stats.currentDay, selectedWeek]);
 
   const statusFor = (gd: number, completed: boolean): DayStatus => {
@@ -222,7 +257,7 @@ function QuestsTab({
           ['当前', `${stats.currentDay}`, '天'],
           ['已完成', `${stats.completedDays}`, '天'],
           ['总天数', `${totalDays}`, '天'],
-          ['总XP', `${stats.xp}`, '⭐'],
+          ['余额', `${stats.xpBalance}`, '💰'],
         ].map(([label, val, unit], i) => (
           <div
             key={i}
@@ -283,9 +318,7 @@ function QuestsTab({
               status={status}
               expanded={expandedDay === globalDay}
               onToggleExpand={() =>
-                setExpandedDay((prev) =>
-                  prev === globalDay ? -1 : globalDay
-                )
+                setExpandedDay((prev) => (prev === globalDay ? -1 : globalDay))
               }
               onRequestComplete={() =>
                 setSheet({ wi: weekIdx, di: dayIdx, gd: globalDay })
@@ -305,11 +338,9 @@ function QuestsTab({
           const { wi, di, gd } = sheet;
           const wasLastOfWeek =
             di === weeks[wi].days.length - 1 && wi < weeks.length - 1;
-          onComplete(wi, di, note, gd, wasLastOfWeek, wi + 1);
+          onComplete(wi, di, note, gd);
           setSheet(null);
-          if (wasLastOfWeek && gd < totalDays) {
-            setSelectedWeek(wi + 1);
-          }
+          if (wasLastOfWeek && gd < totalDays) setSelectedWeek(wi + 1);
         }}
       />
     </div>
@@ -321,11 +352,13 @@ function PlanTab({
   rawText,
   completedDays,
   totalDays,
+  totalXp,
   onReset,
 }: {
   rawText: string;
   completedDays: number;
   totalDays: number;
+  totalXp: number;
   onReset: () => void;
 }) {
   const pct = totalDays ? Math.round((completedDays / totalDays) * 100) : 0;
@@ -346,6 +379,9 @@ function PlanTab({
             transition={{ duration: 0.5 }}
           />
         </div>
+        <div className="mt-3 text-xs text-gray-400">
+          累计赚取 ⭐ {totalXp} XP
+        </div>
       </div>
 
       <div className="mt-3 rounded-card border border-line bg-white p-4 shadow-soft">
@@ -361,97 +397,6 @@ function PlanTab({
       >
         🔄 重新输入计划
       </button>
-    </div>
-  );
-}
-
-/* ---------- Island Tab ---------- */
-const MILESTONES = [
-  { days: 1, icon: '🌱', label: '岛屿诞生' },
-  { days: 7, icon: '🏠', label: '图书馆解锁' },
-  { days: 14, icon: '☕', label: '咖啡馆解锁' },
-  { days: 21, icon: '🏛️', label: '博物馆解锁' },
-  { days: 30, icon: '🌳', label: '古树广场' },
-  { days: 45, icon: '🏆', label: '雅思神殿' },
-  { days: 60, icon: '🎓', label: '通关纪念碑' },
-];
-
-function IslandTab({
-  completedDays,
-  streak,
-  xp,
-}: {
-  completedDays: number;
-  streak: number;
-  xp: number;
-}) {
-  const level = Math.floor(completedDays / 5) + 1;
-  const buildings = Math.floor(completedDays / 7) + 1;
-  return (
-    <div className="px-4 pt-6">
-      <div className="text-center">
-        <div className="text-6xl">🏝️</div>
-        <h2 className="mt-2 text-xl font-extrabold text-gray-800">
-          我的雅思岛
-        </h2>
-        <p className="mt-1 text-sm text-gray-500">每完成一天，岛屿升一级</p>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        {[
-          ['🏝️', '岛屿等级', `Lv.${level}`],
-          ['🏗️', '已解锁建筑', `${buildings}`],
-          ['🔥', '连续天数', `${streak}`],
-          ['⭐', '总 XP', `${xp}`],
-        ].map(([icon, label, val], i) => (
-          <div
-            key={i}
-            className="rounded-card border border-line bg-white p-4 text-center shadow-soft"
-          >
-            <div className="text-2xl">{icon}</div>
-            <div className="mt-1 text-xl font-extrabold text-forest">
-              {val}
-            </div>
-            <div className="text-xs text-gray-400">{label}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-4 rounded-card border border-line bg-white p-4 shadow-soft">
-        <div className="mb-3 text-sm font-bold text-gray-700">📋 里程碑</div>
-        <div className="space-y-2">
-          {MILESTONES.map((m) => {
-            const reached = completedDays >= m.days;
-            return (
-              <div
-                key={m.days}
-                className={`flex items-center gap-3 rounded-card px-3 py-2 ${
-                  reached ? 'bg-forest/10' : 'bg-cream'
-                }`}
-              >
-                <span className="text-xl">{m.icon}</span>
-                <div className="flex-1">
-                  <div
-                    className={`text-sm font-bold ${
-                      reached ? 'text-forest' : 'text-gray-400'
-                    }`}
-                  >
-                    {m.label}
-                  </div>
-                  <div className="text-xs text-gray-400">第 {m.days} 天</div>
-                </div>
-                <span className="text-sm">
-                  {reached ? (
-                    <span className="font-bold text-forest">✅</span>
-                  ) : (
-                    <span className="text-gray-300">🔒</span>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }
